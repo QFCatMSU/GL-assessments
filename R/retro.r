@@ -35,10 +35,10 @@ f <- function(par) {
     sel_trap <- 1 / (1 + exp(-sel_trap_p1 * (la - sel_trap_p2)))
   }
   if (sel_ctl == 1) { # gamma 
-    p <- 0.5 * (sqrt(sel_gill_p2 + 4 * sel_gill_p1^2) - sel_gill_p2)
+    p <- 0.5 * (sqrt(sel_gill_p2^2 + 4 * sel_gill_p1^2) - sel_gill_p2)
     sel_gill <- (la / sel_gill_p2)^(sel_gill_p2 / p) * exp((sel_gill_p2 - la) / p)
     
-    p <- 0.5 * (sqrt(sel_trap_p2 + 4 * sel_trap_p1^2) - sel_trap_p2)
+    p <- 0.5 * (sqrt(sel_trap_p2^2 + 4 * sel_trap_p1^2) - sel_trap_p2)
     sel_trap <- (la / sel_trap_p2)^(sel_trap_p2 / p) * exp((sel_trap_p2 - la) / p)
   }
   
