@@ -128,10 +128,10 @@ f <- function(par) {
     sel_trap <- 1 / (1 + exp(-sel_trap_p1 * (la - sel_trap_p2)))
   }
   if (sel_ctl == 1) { # gamma 
-    p <- 0.5 * (sqrt(sel_gill_p2 + 4 * sel_gill_p1^2) - sel_gill_p2)
+    p <- 0.5 * (sqrt(sel_gill_p2^2 + 4 * sel_gill_p1^2) - sel_gill_p2)
     sel_gill <- (la / sel_gill_p2)^(sel_gill_p2 / p) * exp((sel_gill_p2 - la) / p)
     
-    p <- 0.5 * (sqrt(sel_trap_p2 + 4 * sel_trap_p1^2) - sel_trap_p2)
+    p <- 0.5 * (sqrt(sel_trap_p2^2 + 4 * sel_trap_p1^2) - sel_trap_p2)
     sel_trap <- (la / sel_trap_p2)^(sel_trap_p2 / p) * exp((sel_trap_p2 - la) / p)
   }
   
@@ -229,7 +229,6 @@ if (data$rec_ctl != 2) {
 }
 
 data$sel_ctl <- 0 # 0 = logistic, 1 = gamma
-# ? NOTE--need to change sel_par starting values to log(550) to get gamma to converge
 
 obj <- MakeADFun(f, par, map = map)
 opt <- nlminb(obj$par, obj$fn, obj$gr, control = list(eval.max = 1e3, iter.max = 1e3))
