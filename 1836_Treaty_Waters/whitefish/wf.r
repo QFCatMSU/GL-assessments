@@ -1,37 +1,37 @@
+rm(list = ls())
+gc()
 library(RTMB)
 
-#---------------
-# Set up data and parameters
-load("data/sim_data.RData")
+############
+## Data ####
+############
+load("1836_Treaty_Waters/whitefish/sim_data.Rdata")
 data <- list()
-data$n_age <- length(dat$aux$fage:dat$aux$lage)
-data$n_year <- length(dat$aux$fyear:dat$aux$lyear)
-data$ages <- dat$aux$fage:dat$aux$lage
-data$years <- dat$aux$fyear:dat$aux$lyear
-data$la <- dat$la
-data$wa <- dat$wt
-data$obs_eff_trap <- dat$effort_trap
-data$obs_eff_gill <- dat$effort_gill * dat$depth_adj
-data$mn_wt_trap <- dat$mean_wt_kg_trap
-data$mn_wt_gill <- dat$mean_wt_kg_gill
-data$prior_sdr <- dat$aux$rhoSR
-data$prior_ct_trap_sd <- dat$aux$rhoCT
-data$prior_q_trap_sd <- dat$aux$rhoET
-data$prior_ct_gill_sd <- dat$aux$rhoCG
-data$prior_q_gill_sd <- dat$aux$rhoEG
-data$ess_trap <- dat$ESS_trap
-data$ess_gill <- dat$ESS_gill
+data$n_age <- dat$aux$n_age # number of ages
+data$n_year <- dat$aux$n_year # number of years
+data$n_fleet <- dat$aux$n_fleet # number of fleets
+data$ages <- dat$aux$ages # vector of ages
+data$years <- dat$aux$years # vector of years
+data$fleets <- dat$aux$fleets # vector of fleets
+data$la <- dat$la # length at age
+data$wa <- dat$wa # weight at age
+data$mat <- dat$mat # maturity at age
+data$obs_eff <- dat$obs_eff # observed effort
+data$obs_ct <- dat$obs_ct # observed catch
+data$ess <- dat$samp # initial effective sample size
+data$obs_pa <- dat$obs_pa # observed proportions at age (age composition data)
 
-obs1 <- matrix((dat$biomass_gill / dat$mean_wt_kg_gill) / dat$gill_adj)
+# vectorize all the observed data
+obs1 <- matrix(data$obs_ct[,1])
 obs1 <- data.frame(obs1)
 names(obs1) <- "obs"
 obs1$year <- data$years
 obs1$age <- NA
-obs1$type <- "obs_ct_gill"
+obs1$type <- "ct"
 obs1$fleet <- 1
 obs1$obs <- log(obs1$obs)
 
-obs2 <- data.frame(dat$pa_gill * dat$ESS_gill, check.names = FALSE)
+obs2 <- data.frame(data$obs_pa[,,1], check.names = FALSE)
 obs2 <- reshape(
   data = obs2,
   direction = "long",
@@ -44,19 +44,19 @@ obs2 <- reshape(
 )
 rownames(obs2) <- NULL
 obs2$fleet <- 1
-obs2$type <- "obs_pa_gill"
+obs2$type <- "pa"
 obs2 <- obs2[, names(obs1)]
 
-obs3 <- matrix((dat$biomass_trap / dat$mean_wt_kg_trap) / dat$trap_adj)
+obs3 <- matrix(data$obs_ct[,2])
 obs3 <- data.frame(obs3)
 names(obs3) <- "obs"
 obs3$year <- data$years
 obs3$age <- NA
-obs3$type <- "obs_ct_trap"
+obs3$type <- "ct"
 obs3$fleet <- 2
 obs3$obs <- log(obs3$obs)
 
-obs4 <- data.frame(dat$pa_trap * dat$ESS_trap, check.names = FALSE)
+obs4 <- data.frame(data$obs_pa[,,2], check.names = FALSE)
 obs4 <- reshape(
   data = obs4,
   direction = "long",
@@ -69,7 +69,7 @@ obs4 <- reshape(
 )
 rownames(obs4) <- NULL
 obs4$fleet <- 2
-obs4$type <- "obs_pa_trap"
+obs4$type <- "pa"
 obs4 <- obs4[, names(obs1)]
 obs_all <- rbind(obs1, obs2, obs3, obs4)
 
@@ -79,27 +79,49 @@ data$age <- obs_all$age
 data$type <- obs_all$type
 data$fleet <- obs_all$fleet
 
+
+##################
+## Parameters ####
+##################
 par <- list()
-par$log_sel_trap_p1 <- -3
-par$log_sel_trap_p2 <- 5.7
-par$log_sel_gill_p1 <- -3
-par$log_sel_gill_p2 <- 6
-par$log_sig <- 0
-par$log_qt_trap <- rep(0, data$n_year)
-par$log_qt_gill <- rep(0, data$n_year)
-par$log_ninit <- rep(0, 3)
-par$log_r <- rep(0, data$n_year)
-par$t_phi <- 0
+par$log_sel <- matrix(0, nrow = 2, ncol = data$n_fleet)
+par$log_sel[,1] <- rep(-3, data$n_fleet) # p1
+par$log_sel[,2] <- rep(6, data$n_fleet) # p2
+par$log_q <- rep(0, data$n_fleet)
+par$log_q_sd <- rep(log(0.05), data$n_year)
+par$log_ct_sd <- rep(log(0.05), data$n_fleet)
+par$log_theta <- rep(log(0.5), data$n_fleet)
+par$log_qt_devs <- matrix(0, nrow = (data$n_year - 1), ncol = data$n_fleet)
 par$log_M <- log(0.2)
+par$log_r_sd <- 0
+par$log_r_devs <- rep(0, data$n_year - 1)
+par$log_r_init <- 10
+par$log_n_init <- log(exp(par$log_r_init) * exp(-exp(par$log_M) * (1:5)))
+
+
+############################
+## Additional functions ####
+############################
+# Dirichelt multinomial likelihood
+ddirmultinom <- function(obs, pred, input_n, theta) {
+  dir_param <- theta * input_n
+  nll <- lgamma(input_n + 1) + lgamma(dir_param) - lgamma(input_n + dir_param)
+  nll2 <- 0
+  for (a in 1:length(pred)) {
+    nll2 <- nll2 - lgamma(obs[a] * input_n + 1) -
+      lgamma(obs[a] * input_n + dir_param * pred[a]) +
+      lgamma(dir_param * pred[a])
+  }
+  nll <- nll - nll2
+  nll
+}
 
 
 #---------------
 # assessment model 
 f <- function(par) {
-  # get data and pars, specify observations, ADoverload trick
+  # get data and pars
   getAll(data, par)
-  obs <- OBS(obs)
-  "[<-" <- ADoverload("[<-")
 
   # back transform, set up vectors and matrices for use later on
   sel_gill_p1 <- exp(log_sel_gill_p1)
@@ -113,6 +135,7 @@ f <- function(par) {
   log_n <- matrix(-10, nrow = n_year, ncol = n_age)
 
   # objective function:
+  # ! - test case with jnll (no NaNs or NAs)
   jnll <- 0
   
   # catchability 
@@ -123,11 +146,18 @@ f <- function(par) {
                          sig * prior_q_trap_sd, TRUE)
   }
   # selectivity 
+  # ! - test case here - 
+  # values to test for sel_ctl == 0
+  # sel_gill_p2/trap_p2 <- mean(la[15,])
+  # sel_gill_p1/trap_p1 <- 0.02
+  # should look like a logistic curve for each year
+  # values to test for sel_ctl == 1
+  # sel_gill_p2/trap_p2 <- mean(la[15,])
+  # sel_gill_p1/trap_p1 <- 90
   if (sel_ctl == 0) { # logistic 
     sel_gill <- 1 / (1 + exp(-sel_gill_p1 * (la - sel_gill_p2)))
     sel_trap <- 1 / (1 + exp(-sel_trap_p1 * (la - sel_trap_p2)))
-  }
-  if (sel_ctl == 1) { # gamma 
+  } else if (sel_ctl == 1) { # gamma 
     p <- 0.5 * (sqrt(sel_gill_p2^2 + 4 * sel_gill_p1^2) - sel_gill_p2)
     sel_gill <- (la / sel_gill_p2)^(sel_gill_p2 / p) * exp((sel_gill_p2 - la) / p)
     
@@ -139,13 +169,11 @@ f <- function(par) {
   sdr <- sig * prior_sdr
   if (rec_ctl == 0) { # WN 
     jnll <- jnll - sum(dnorm(log_r, 0, sdr, TRUE))
-  }
-  if (rec_ctl == 1) { # RW 
+  } else if (rec_ctl == 1) { # RW 
     for (t in 2:n_year) {
       jnll <- jnll - dnorm(log_r[t], log_r[t - 1], sdr, TRUE)
     }
-  }
-  if (rec_ctl == 2) { # AR-1 
+  } else if (rec_ctl == 2) { # AR-1 
     stationary_sd <- sqrt(sdr * sdr / (1 - phi * phi))
     jnll <- jnll - dautoreg(log_r, phi = phi, scale = stationary_sd, log = TRUE)
   }
