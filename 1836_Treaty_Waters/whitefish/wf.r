@@ -22,7 +22,8 @@ data$ess <- dat$samp # initial effective sample size
 data$obs_pa <- dat$obs_pa # observed proportions at age (age composition data)
 
 # vectorize all the observed data
-obs1 <- matrix(data$obs_ct[,1])
+# catch - gillnet
+obs1 <- matrix(data$obs_ct[, 1])
 obs1 <- data.frame(obs1)
 names(obs1) <- "obs"
 obs1$year <- data$years
@@ -30,8 +31,8 @@ obs1$age <- NA
 obs1$type <- "ct"
 obs1$fleet <- 1
 obs1$obs <- log(obs1$obs)
-
-obs2 <- data.frame(data$obs_pa[,,1], check.names = FALSE)
+# proportions at age - gillnet
+obs2 <- data.frame(data$obs_pa[, , 1], check.names = FALSE)
 obs2 <- reshape(
   data = obs2,
   direction = "long",
@@ -46,8 +47,8 @@ rownames(obs2) <- NULL
 obs2$fleet <- 1
 obs2$type <- "pa"
 obs2 <- obs2[, names(obs1)]
-
-obs3 <- matrix(data$obs_ct[,2])
+# catch - trapnet
+obs3 <- matrix(data$obs_ct[, 2])
 obs3 <- data.frame(obs3)
 names(obs3) <- "obs"
 obs3$year <- data$years
@@ -55,8 +56,8 @@ obs3$age <- NA
 obs3$type <- "ct"
 obs3$fleet <- 2
 obs3$obs <- log(obs3$obs)
-
-obs4 <- data.frame(data$obs_pa[,,2], check.names = FALSE)
+# proportions at age - trapnet
+obs4 <- data.frame(data$obs_pa[, , 2], check.names = FALSE)
 obs4 <- reshape(
   data = obs4,
   direction = "long",
@@ -73,30 +74,59 @@ obs4$type <- "pa"
 obs4 <- obs4[, names(obs1)]
 obs_all <- rbind(obs1, obs2, obs3, obs4)
 
+# incorporate into data list
 data$obs <- obs_all$obs
 data$year <- obs_all$year
 data$age <- obs_all$age
 data$type <- obs_all$type
 data$fleet <- obs_all$fleet
 
+# controls for alternative functions
+# recruitment
+# 0 = WN, 1 = RW, 2 = AR1
+data$rec_ctl <- 1 
+# selectivity
+# 0 = logistic, 1 = gamma
+data$sel_ctl <- c(0,0) 
+# time-varying catchability
+# 0 - single, 1 - time-varying
+data$qt_ctl <- 1
+
 
 ##################
 ## Parameters ####
 ##################
 par <- list()
-par$log_sel <- matrix(0, nrow = 2, ncol = data$n_fleet)
-par$log_sel[,1] <- rep(-3, data$n_fleet) # p1
-par$log_sel[,2] <- rep(6, data$n_fleet) # p2
-par$log_q <- rep(0, data$n_fleet)
-par$log_q_sd <- rep(log(0.05), data$n_year)
-par$log_ct_sd <- rep(log(0.05), data$n_fleet)
-par$log_theta <- rep(log(0.5), data$n_fleet)
-par$log_qt_devs <- matrix(0, nrow = (data$n_year - 1), ncol = data$n_fleet)
-par$log_M <- log(0.2)
-par$log_r_sd <- 0
-par$log_r_devs <- rep(0, data$n_year - 1)
-par$log_r_init <- 10
-par$log_n_init <- log(exp(par$log_r_init) * exp(-exp(par$log_M) * (1:5)))
+par$log_sel <- matrix(0, nrow = 2, ncol = data$n_fleet) # selectivity parameters
+par$log_sel[, 1] <- rep(-3, data$n_fleet) # selectivity p1
+par$log_sel[, 2] <- rep(6, data$n_fleet) # selectivity p2
+par$log_q <- rep(0.1, data$n_fleet) # initial value of catchability
+par$log_theta <- rep(log(0.5), data$n_fleet) # Dirichlet multinomial parameter
+par$log_M <- log(0.2) # natural mortality
+par$log_r_init <- 10 # R0
+par$log_n_init <- log(exp(par$log_r_init) * exp(-exp(par$log_M) * (1:5))) # initial abundance at age
+par$log_r_devs <- rep(0, data$n_year - 1) # recruitment deviations
+# catchability deviations
+# standard deviations for catchability deviations
+if(data$qt_ctl == 1)
+{ 
+  par$log_qt_devs <- matrix(0, nrow = data$n_year - 1, ncol = data$n_fleet)
+  par$log_qt_sd <- rep(log(0.05), data$n_fleet)
+} else 
+{
+  par$log_qt_devs <- numeric(0)
+  par$log_qt_sd <- numeric(0)
+}
+par$log_ct_sd <- rep(log(0.05), data$n_fleet) # standard deviations for catch 
+par$log_r_sd <- 0 # standard deviation for recruitment deviations
+# autocorrelation parameter
+if(data$rec_ctl == 2) 
+{
+  par$t_phi <- 0
+} else 
+{
+  par$t_phi <- numeric(0)
+}
 
 
 ############################
@@ -117,63 +147,93 @@ ddirmultinom <- function(obs, pred, input_n, theta) {
 }
 
 
-#---------------
-# assessment model 
-f <- function(par) {
+########################
+## Assessment model ####
+########################
+f <- function(par) 
+{
   # get data and pars
   getAll(data, par)
 
-  # back transform, set up vectors and matrices for use later on
-  sel_gill_p1 <- exp(log_sel_gill_p1)
-  sel_gill_p2 <- exp(log_sel_gill_p2)
-  sel_trap_p1 <- exp(log_sel_trap_p1)
-  sel_trap_p2 <- exp(log_sel_trap_p2)
-  sig <- exp(log_sig)
-  phi <- 2 * plogis(t_phi) - 1
+  # back transform parameters
+  sel_pars <- exp(log_sel)
+  q <- exp(log_q)
+  theta <- exp(log_theta)
   M <- exp(log_M)
-  sel_gill <- sel_trap <- matrix(0, nrow = n_year, ncol = n_age)
-  log_n <- matrix(-10, nrow = n_year, ncol = n_age)
+  r_init <- exp(log_r_init)
+  n_init <- exp(log_n_init)
+  if(qt_ctl == 1) qt_sd <- exp(log_qt_sd)
+  ct_sd <- exp(log_ct_sd)
+  r_sd <- exp(log_r_sd)
+  if(rec_ctl == 2) phi <- 2 * plogis(t_phi) - 1
 
   # objective function:
-  # ! - test case with jnll (no NaNs or NAs)
-  jnll <- 0
-  
-  # catchability 
-  for (t in 2:n_year) { # RW 
-    jnll <- jnll - dnorm(log_qt_gill[t], log_qt_gill[t - 1], 
-                         sig * prior_q_gill_sd, TRUE)
-    jnll <- jnll - dnorm(log_qt_trap[t], log_qt_trap[t - 1],
-                         sig * prior_q_trap_sd, TRUE)
+  jnll <- 0 # joint negative log likelihood
+  nll <- numeric(9) # individual negative log likelihoods - hard coded in
+
+  # selectivity
+  sel <- array(0, dim = c(n_year, n_age, n_fleet))
+  for(f in 1:n_fleet) 
+  {
+    # logistic
+    if(sel_ctl[f] == 0) 
+    {
+      sel[,,f] <- 1 / (1 + exp(-sel_pars[f,1] * (la - sel_pars[f,2])))
+    } else if(sel_ctl[f] == 1)  # gamma
+    {
+      p <- 0.5 * (sqrt(sel_pars[f,2]^2 + 4 * sel_pars[f,1]^2) - sel_pars[f,2])
+      sel[,,f] <- (la / sel_pars[f,2])^(sel_pars[f,2] / p) * exp((sel_pars[f,2] - la) / p)
+    }
   }
-  # selectivity 
-  # ! - test case here - 
-  # values to test for sel_ctl == 0
-  # sel_gill_p2/trap_p2 <- mean(la[15,])
-  # sel_gill_p1/trap_p1 <- 0.02
-  # should look like a logistic curve for each year
-  # values to test for sel_ctl == 1
-  # sel_gill_p2/trap_p2 <- mean(la[15,])
-  # sel_gill_p1/trap_p1 <- 90
-  if (sel_ctl == 0) { # logistic 
-    sel_gill <- 1 / (1 + exp(-sel_gill_p1 * (la - sel_gill_p2)))
-    sel_trap <- 1 / (1 + exp(-sel_trap_p1 * (la - sel_trap_p2)))
-  } else if (sel_ctl == 1) { # gamma 
-    p <- 0.5 * (sqrt(sel_gill_p2^2 + 4 * sel_gill_p1^2) - sel_gill_p2)
-    sel_gill <- (la / sel_gill_p2)^(sel_gill_p2 / p) * exp((sel_gill_p2 - la) / p)
-    
-    p <- 0.5 * (sqrt(sel_trap_p2^2 + 4 * sel_trap_p1^2) - sel_trap_p2)
-    sel_trap <- (la / sel_trap_p2)^(sel_trap_p2 / p) * exp((sel_trap_p2 - la) / p)
+
+  # catchability
+  # time-varying
+  log_qt <- matrix(0, nrow = n_year, ncol = n_fleet)
+  for(f in 1:n_fleet)
+  {
+    if(qt_ctl == 1) 
+    {
+      # initialize q
+      log_qt[1,f] <- log_q[f]
+      # walk through remaining timesteps for q
+      for(t in 2:n_year) 
+      {
+        log_qt[t,f] <- log_qt[t - 1, f] + log_qt_devs[t - 1, f]
+      }
+      # likelihood for catchability deviations
+      nll[1] <- nll[1] - sum(dnorm(log_qt[,f], 0, qt_sd[f], log = TRUE))
+    } else if(qt_ctl == 0) # constant
+    {
+      for(t in 2:n_year) 
+      {
+        log_qt[t,f] <- log_q[f] 
+      }
+    }
+  } 
+
+  # calculate mortalities
+  F <- array(0, dim = c(n_year, n_age, n_fleet))
+  for(f in 1:n_fleet) 
+  {
+    F[,,f] <- exp(log_qt[,f]) * obs_eff[,f] * sel[,,f]
   }
+  Z <- apply(F, MARGIN = c(1,2), FUN = sum) + M
   
-  # recruitment 
+  # initialize log_n
+  browser()
+# !!!!
+
+  log_n <- matrix(-20, nrow = n_year, ncol = n_age)
+
+  # recruitment
   sdr <- sig * prior_sdr
-  if (rec_ctl == 0) { # WN 
+  if (rec_ctl == 0) { # WN
     jnll <- jnll - sum(dnorm(log_r, 0, sdr, TRUE))
-  } else if (rec_ctl == 1) { # RW 
+  } else if (rec_ctl == 1) { # RW
     for (t in 2:n_year) {
       jnll <- jnll - dnorm(log_r[t], log_r[t - 1], sdr, TRUE)
     }
-  } else if (rec_ctl == 2) { # AR-1 
+  } else if (rec_ctl == 2) { # AR-1
     stationary_sd <- sqrt(sdr * sdr / (1 - phi * phi))
     jnll <- jnll - dautoreg(log_r, phi = phi, scale = stationary_sd, log = TRUE)
   }
@@ -211,12 +271,16 @@ f <- function(par) {
 
   # log catches
   idx <- which(type == "obs_ct_gill")
-  jnll <- jnll - sum(dnorm(obs[idx], log(ct_gill_total),
-                           sig * prior_ct_gill_sd, TRUE))
+  jnll <- jnll - sum(dnorm(
+    obs[idx], log(ct_gill_total),
+    sig * prior_ct_gill_sd, TRUE
+  ))
 
   idx <- which(type == "obs_ct_trap")
-  jnll <- jnll - sum(dnorm(obs[idx], log(ct_trap_total),
-                           sig * prior_ct_trap_sd, TRUE))
+  jnll <- jnll - sum(dnorm(
+    obs[idx], log(ct_trap_total),
+    sig * prior_ct_trap_sd, TRUE
+  ))
 
   # age comps for each fleet (gear)
   for (f in unique(fleet)) {
@@ -249,16 +313,7 @@ f <- function(par) {
   jnll
 }
 
-data$rec_ctl <- 1 # 0 = WN, 1 = RW, 2 = AR1
-if (data$rec_ctl != 2) {
-  map <- list(log_M = factor(NA), t_phi = factor(NA))
-} else {
-  map <- list(log_M = factor(NA))
-}
-
-data$sel_ctl <- 0 # 0 = logistic, 1 = gamma
-
-obj <- MakeADFun(f, par, map = map)
+obj <- MakeADFun(f, par)
 opt <- nlminb(obj$par, obj$fn, obj$gr, control = list(eval.max = 1e3, iter.max = 1e3))
 sdr <- sdreport(obj)
 opt
