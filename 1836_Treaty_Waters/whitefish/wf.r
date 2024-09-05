@@ -18,6 +18,7 @@ data$wa <- dat$wa # weight at age
 data$mat <- dat$mat # maturity at age
 data$obs_eff <- dat$obs_eff # observed effort
 data$obs_ct <- dat$obs_ct # observed catch
+data$bio_samp <- dat$samp # initial effective sample size
 data$ess <- dat$samp # initial effective sample size
 data$obs_pa <- dat$obs_pa # observed proportions at age (age composition data)
 
@@ -90,7 +91,7 @@ data$rec_ctl <- 1
 data$sel_ctl <- c(0,0) 
 # time-varying catchability
 # 0 - single, 1 - time-varying
-data$qt_ctl <- 1
+data$qt_ctl <- 0
 
 
 ##################
@@ -103,9 +104,8 @@ par$log_sel[, 2] <- rep(6, data$n_fleet) # selectivity p2
 par$log_q <- rep(0.1, data$n_fleet) # initial value of catchability
 par$log_theta <- rep(log(0.5), data$n_fleet) # Dirichlet multinomial parameter
 par$log_M <- log(0.2) # natural mortality
-par$log_r_init <- 10 # R0
-par$log_n_init <- log(exp(par$log_r_init) * exp(-exp(par$log_M) * (1:5))) # initial abundance at age
-par$log_r_devs <- rep(0, data$n_year - 1) # recruitment deviations
+par$log_n_init <- log(exp(12) * exp(-exp(par$log_M) * (1:3))) # initial abundance at age
+par$log_r <- rep(0, data$n_year) # recruitment
 # catchability deviations
 # standard deviations for catchability deviations
 if(data$qt_ctl == 1)
@@ -133,11 +133,13 @@ if(data$rec_ctl == 2)
 ## Additional functions ####
 ############################
 # Dirichelt multinomial likelihood
-ddirmultinom <- function(obs, pred, input_n, theta) {
+ddirmultinom <- function(obs, pred, input_n, theta) 
+{
   dir_param <- theta * input_n
   nll <- lgamma(input_n + 1) + lgamma(dir_param) - lgamma(input_n + dir_param)
   nll2 <- 0
-  for (a in 1:length(pred)) {
+  for (a in 1:length(pred)) 
+  {
     nll2 <- nll2 - lgamma(obs[a] * input_n + 1) -
       lgamma(obs[a] * input_n + dir_param * pred[a]) +
       lgamma(dir_param * pred[a])
@@ -160,7 +162,6 @@ f <- function(par)
   q <- exp(log_q)
   theta <- exp(log_theta)
   M <- exp(log_M)
-  r_init <- exp(log_r_init)
   n_init <- exp(log_n_init)
   if(qt_ctl == 1) qt_sd <- exp(log_qt_sd)
   ct_sd <- exp(log_ct_sd)
@@ -169,7 +170,7 @@ f <- function(par)
 
   # objective function:
   jnll <- 0 # joint negative log likelihood
-  nll <- numeric(9) # individual negative log likelihoods - hard coded in
+  nll <- numeric(4) # individual negative log likelihoods - catchability, recruitment, catch, proportions at age
 
   # selectivity
   sel <- array(0, dim = c(n_year, n_age, n_fleet))
@@ -187,11 +188,10 @@ f <- function(par)
   }
 
   # catchability
-  # time-varying
   log_qt <- matrix(0, nrow = n_year, ncol = n_fleet)
   for(f in 1:n_fleet)
   {
-    if(qt_ctl == 1) 
+    if(qt_ctl == 1) # time-varying
     {
       # initialize q
       log_qt[1,f] <- log_q[f]
@@ -202,7 +202,7 @@ f <- function(par)
       }
       # likelihood for catchability deviations
       nll[1] <- nll[1] - sum(dnorm(log_qt[,f], 0, qt_sd[f], log = TRUE))
-    } else if(qt_ctl == 0) # constant
+    } else if(qt_ctl == 0) # constant q
     {
       for(t in 2:n_year) 
       {
@@ -218,39 +218,33 @@ f <- function(par)
     F[,,f] <- exp(log_qt[,f]) * obs_eff[,f] * sel[,,f]
   }
   Z <- apply(F, MARGIN = c(1,2), FUN = sum) + M
-  
-  # initialize log_n
-  browser()
-# !!!!
-
-  log_n <- matrix(-20, nrow = n_year, ncol = n_age)
 
   # recruitment
-  sdr <- sig * prior_sdr
-  if (rec_ctl == 0) { # WN
-    jnll <- jnll - sum(dnorm(log_r, 0, sdr, TRUE))
-  } else if (rec_ctl == 1) { # RW
+  if (rec_ctl == 0) # WN
+  { 
+    nll[2] <- nll[2] - sum(dnorm(log_r, 0, r_sd, TRUE))
+  } else if (rec_ctl == 1) # RW
+  { 
     for (t in 2:n_year) {
-      jnll <- jnll - dnorm(log_r[t], log_r[t - 1], sdr, TRUE)
+      nll[2] <- nll[2] - dnorm(log_r[t], log_r[t - 1], r_sd, TRUE)
     }
-  } else if (rec_ctl == 2) { # AR-1
-    stationary_sd <- sqrt(sdr * sdr / (1 - phi * phi))
-    jnll <- jnll - dautoreg(log_r, phi = phi, scale = stationary_sd, log = TRUE)
+  } else if (rec_ctl == 2) # AR-1
+  { 
+    stationary_sd <- sqrt(r_sd * r_sd / (1 - phi * phi))
+    nll[2] <- nll[2] - dautoreg(log_r, phi = phi, scale = stationary_sd, log = TRUE)
   }
 
-  # calculate gear specific F and overall Z
-  F_gill <- exp(log_qt_gill) * obs_eff_gill * sel_gill
-  F_trap <- exp(log_qt_trap) * obs_eff_trap * sel_trap
-  F_total <- F_gill + F_trap
-  Z <- F_total + M
-
+  # population model, including plus group
   # initialize log_n
+  log_n <- matrix(-20, nrow = n_year, ncol = n_age)
   log_n[, 1] <- log_r
-  log_n[1, 2:(length(log_ninit) + 1)] <- log_ninit
+  log_n[1, 2:(length(log_n_init) + 1)] <- log_n_init
 
   # population model, including plus group
-  for (t in 2:n_year) {
-    for (a in 2:n_age) {
+  for (t in 2:n_year) 
+  {
+    for (a in 2:n_age) 
+    {
       log_n[t, a] <- log_n[t - 1, a - 1] - Z[t - 1, a - 1]
     }
     log_n[t, n_age] <- log(
@@ -260,61 +254,65 @@ f <- function(par)
   }
 
   # Baranov's equation to calculate catch and proportions
-  ct_gill <- (F_gill / Z) * (1 - exp(-Z)) * exp(log_n)
-  ct_gill_total <- rowSums(ct_gill)
-  pa_gill <- ct_gill / ct_gill_total
-  biomass_gill <- mn_wt_gill * ct_gill
-  ct_trap <- (F_trap / Z) * (1 - exp(-Z)) * exp(log_n)
-  ct_trap_total <- rowSums(ct_trap)
-  pa_trap <- ct_trap / ct_trap_total
-  biomass_trap <- mn_wt_trap * ct_trap
+  ct <- array(0, dim = c(n_year, n_age, n_fleet))
+  ct_total <- matrix(0, nrow = n_year, ncol = n_fleet)
+  pa <- array(0, dim = c(n_year, n_age, n_fleet))
+  for(f in 1:n_fleet) 
+  {
+    ct[,,f] <- F[,,f] / Z * (1 - exp(-Z)) * exp(log_n)
+    ct_total[,f] <- rowSums(ct[,,f])
+    pa[,,f] <- ct[,,f] / ct_total[,f]
+  }
 
-  # log catches
-  idx <- which(type == "obs_ct_gill")
-  jnll <- jnll - sum(dnorm(
-    obs[idx], log(ct_gill_total),
-    sig * prior_ct_gill_sd, TRUE
-  ))
-
-  idx <- which(type == "obs_ct_trap")
-  jnll <- jnll - sum(dnorm(
-    obs[idx], log(ct_trap_total),
-    sig * prior_ct_trap_sd, TRUE
-  ))
-
-  # age comps for each fleet (gear)
-  for (f in unique(fleet)) {
-    for (y in unique(year)) {
+  # likelihoods
+  neff_dm <- matrix(0, nrow = n_year, ncol = n_fleet)
+  for (f in unique(fleet)) 
+  {
+    for (y in unique(year)) 
+    {
       t <- which(years == y)
-      idx1 <- which(fleet == f & year == y & type == "obs_pa_gill")
-      if (length(idx1) != 0) {
-        jnll <- jnll - dmultinom(obs[idx1], prob = pa_gill[t, ], log = TRUE)
-      }
-      idx2 <- which(fleet == f & year == y & type == "obs_pa_trap")
-      if (length(idx2) != 0) {
-        jnll <- jnll - dmultinom(obs[idx2], prob = pa_trap[t, ], log = TRUE)
+      # catch likelihood
+      idx <- which(fleet == f & year == y & type == "ct")
+      nll[3] <- nll[3] - dnorm(obs[idx], ct_total[t,f], ct_sd[f], log = TRUE)
+      # proportions at age likelihood
+      idx <- which(fleet == f & year == y & type == "pa")
+      if (length(idx) != 0 & sum(obs[idx]) > 0) 
+      {
+        if (bio_samp[t,f] > 100) 
+        {
+          nll[4] <- nll[4] - ddirmultinom(obs[idx], pa[t,,f] + 1e-8, bio_samp[t,f], theta[f])
+          neff_dm[t,f] <- 1 / (1 + theta[f]) + ess[t,f] * (theta[f] / (1 + theta[f]))
+        }
       }
     }
   }
 
+  jnll <- sum(nll)
+
   # reporting
   REPORT(log_n)
-  REPORT(sel_gill)
-  REPORT(sel_trap)
-  REPORT(F_trap)
-  REPORT(F_gill)
-  REPORT(F_total)
+  REPORT(sel)
+  REPORT(F)
   REPORT(Z)
-  REPORT(ct_gill_total)
-  REPORT(ct_trap_total)
-  REPORT(pa_gill)
-  REPORT(pa_trap)
+  REPORT(ct_total)
+  REPORT(pa)
 
   jnll
 }
 
-obj <- MakeADFun(f, par)
+map <- list()
+map$log_M <- factor(NA)
+# map$log_qt_sd <- factor(c(NA,NA))
+map$log_ct_sd <- factor(c(NA,NA))
+map$log_r_sd <- factor(NA)
+obj <- MakeADFun(f, par, map = map)
 opt <- nlminb(obj$par, obj$fn, obj$gr, control = list(eval.max = 1e3, iter.max = 1e3))
 sdr <- sdreport(obj)
 opt
 sdr
+
+# pl <- obj$report(opt$par)
+# matplot(exp(pl$log_n), type = "b")
+
+# plot(data$obs_ct[,1], pch = 19)
+# lines(pl$ct_total[,1])
