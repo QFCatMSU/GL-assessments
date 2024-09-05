@@ -5,12 +5,13 @@ library(RTMB)
 ############
 ## Data ####
 ############
+#! - before comments, use space not tab
 load("1836_Treaty_Waters/whitefish/sim_data.Rdata")
 data <- list()
-data$n_age <- dat$aux$n_age # number of ages
-data$n_year <- dat$aux$n_year # number of years
-data$n_fleet <- dat$aux$n_fleet # number of fleets
-data$ages <- dat$aux$ages # vector of ages
+data$n_age <- dat$aux$n_age        # number of ages
+data$n_year <- dat$aux$n_year      # number of years
+data$n_fleet <- dat$aux$n_fleet    # number of fleets
+data$ages <- dat$aux$ages          # vector of ages
 data$years <- dat$aux$years # vector of years
 data$fleets <- dat$aux$fleets # vector of fleets
 data$la <- dat$la # length at age
@@ -83,9 +84,10 @@ data$type <- obs_all$type
 data$fleet <- obs_all$fleet
 
 # controls for alternative functions
+#! define these as characters instead
 # recruitment
 # 0 = WN, 1 = RW, 2 = AR1
-data$rec_ctl <- 1 
+data$rec_ctl <- 1
 # selectivity
 # 0 = logistic, 1 = gamma
 data$sel_ctl <- c(0,0) 
@@ -106,13 +108,14 @@ par$log_theta <- rep(log(0.5), data$n_fleet) # Dirichlet multinomial parameter
 par$log_M <- log(0.2) # natural mortality
 par$log_n_init <- log(exp(12) * exp(-exp(par$log_M) * (1:3))) # initial abundance at age
 par$log_r <- rep(0, data$n_year) # recruitment
+
 # catchability deviations
 # standard deviations for catchability deviations
 if(data$qt_ctl == 1)
 { 
   par$log_qt_devs <- matrix(0, nrow = data$n_year - 1, ncol = data$n_fleet)
   par$log_qt_sd <- rep(log(0.05), data$n_fleet)
-} else 
+}else 
 {
   par$log_qt_devs <- numeric(0)
   par$log_qt_sd <- numeric(0)
@@ -123,11 +126,10 @@ par$log_r_sd <- 0 # standard deviation for recruitment deviations
 if(data$rec_ctl == 2) 
 {
   par$t_phi <- 0
-} else 
+}else 
 {
   par$t_phi <- numeric(0)
 }
-
 
 ############################
 ## Additional functions ####
@@ -145,7 +147,7 @@ ddirmultinom <- function(obs, pred, input_n, theta)
       lgamma(dir_param * pred[a])
   }
   nll <- nll - nll2
-  nll
+  return(nll)
 }
 
 
@@ -154,9 +156,10 @@ ddirmultinom <- function(obs, pred, input_n, theta)
 ########################
 f <- function(par) 
 {
-  # get data and pars
+  # data list from global to local environment
+  # parameters (par) from argument to local environment
   getAll(data, par)
-
+  
   # back transform parameters
   sel_pars <- exp(log_sel)
   q <- exp(log_q)
@@ -180,7 +183,8 @@ f <- function(par)
     if(sel_ctl[f] == 0) 
     {
       sel[,,f] <- 1 / (1 + exp(-sel_pars[f,1] * (la - sel_pars[f,2])))
-    } else if(sel_ctl[f] == 1)  # gamma
+    } 
+    else if(sel_ctl[f] == 1)  # gamma
     {
       p <- 0.5 * (sqrt(sel_pars[f,2]^2 + 4 * sel_pars[f,1]^2) - sel_pars[f,2])
       sel[,,f] <- (la / sel_pars[f,2])^(sel_pars[f,2] / p) * exp((sel_pars[f,2] - la) / p)
@@ -202,7 +206,7 @@ f <- function(par)
       }
       # likelihood for catchability deviations
       nll[1] <- nll[1] - sum(dnorm(log_qt[,f], 0, qt_sd[f], log = TRUE))
-    } else if(qt_ctl == 0) # constant q
+    }else if(qt_ctl == 0) # constant q
     {
       for(t in 2:n_year) 
       {
@@ -223,12 +227,13 @@ f <- function(par)
   if (rec_ctl == 0) # WN
   { 
     nll[2] <- nll[2] - sum(dnorm(log_r, 0, r_sd, TRUE))
-  } else if (rec_ctl == 1) # RW
+  }else if (rec_ctl == 1) # RW
   { 
-    for (t in 2:n_year) {
+    for (t in 2:n_year) 
+    {
       nll[2] <- nll[2] - dnorm(log_r[t], log_r[t - 1], r_sd, TRUE)
     }
-  } else if (rec_ctl == 2) # AR-1
+  }else if (rec_ctl == 2) # AR-1
   { 
     stationary_sd <- sqrt(r_sd * r_sd / (1 - phi * phi))
     nll[2] <- nll[2] - dautoreg(log_r, phi = phi, scale = stationary_sd, log = TRUE)
@@ -247,10 +252,10 @@ f <- function(par)
     {
       log_n[t, a] <- log_n[t - 1, a - 1] - Z[t - 1, a - 1]
     }
-    log_n[t, n_age] <- log(
-      exp(log_n[t, n_age]) + # advancing
-        exp(log_n[t - 1, n_age]) * exp(-Z[t - 1, n_age]) # there already
-    )
+    #advancing + ( * ) there already
+    log_n[t, n_age] <- log(exp(log_n[t, n_age]) +     # advancing
+                           exp(log_n[t - 1, n_age]) * exp(-Z[t - 1, n_age]))
+                                # there already
   }
 
   # Baranov's equation to calculate catch and proportions
@@ -297,7 +302,7 @@ f <- function(par)
   REPORT(ct_total)
   REPORT(pa)
 
-  jnll
+  return(jnll)
 }
 
 map <- list()
@@ -305,11 +310,15 @@ map$log_M <- factor(NA)
 # map$log_qt_sd <- factor(c(NA,NA))
 map$log_ct_sd <- factor(c(NA,NA))
 map$log_r_sd <- factor(NA)
+
 obj <- MakeADFun(f, par, map = map)
+obj$fn()
+obj$gr()
+
 opt <- nlminb(obj$par, obj$fn, obj$gr, control = list(eval.max = 1e3, iter.max = 1e3))
 sdr <- sdreport(obj)
-opt
-sdr
+print(opt)
+print(sdr)
 
 # pl <- obj$report(opt$par)
 # matplot(exp(pl$log_n), type = "b")
