@@ -5,6 +5,10 @@ library(RTMB)
 # source data script
 source("1836_Treaty_Waters/whitefish/data_script.r")
 
+# source functions
+source("functions/ddirmultinom.r")
+source("functions/selectivity.r")
+
 
 ##################
 ## Parameters ####
@@ -41,25 +45,6 @@ if(data$rec_ctl == 2)
   par$t_phi <- numeric(0)
 }
 
-############################
-## Additional functions ####
-############################
-# Dirichelt multinomial likelihood
-ddirmultinom <- function(obs, pred, input_n, theta) 
-{
-  dir_param <- theta * input_n
-  nll <- lgamma(input_n + 1) + lgamma(dir_param) - lgamma(input_n + dir_param)
-  nll2 <- 0
-  for (a in 1:length(pred)) 
-  {
-    nll2 <- nll2 - lgamma(obs[a] * input_n + 1) -
-      lgamma(obs[a] * input_n + dir_param * pred[a]) +
-      lgamma(dir_param * pred[a])
-  }
-  nll <- nll - nll2
-  return(nll)
-}
-
 
 ########################
 ## Assessment model ####
@@ -89,17 +74,13 @@ f <- function(par)
   sel <- array(0, dim = c(n_year, n_age, n_fleet))
   for(f in 1:n_fleet) 
   {
-    # logistic
-    if(sel_ctl[f] == 0) 
-    {
-      sel[,,f] <- 1 / (1 + exp(-sel_pars[f,1] * (la - sel_pars[f,2])))
-    } 
-    else if(sel_ctl[f] == 1)  # gamma
-    {
-      p <- 0.5 * (sqrt(sel_pars[f,2]^2 + 4 * sel_pars[f,1]^2) - sel_pars[f,2])
-      sel[,,f] <- (la / sel_pars[f,2])^(sel_pars[f,2] / p) * exp((sel_pars[f,2] - la) / p)
+    sel[,,f] <- selectivity(sel_ctl = sel_ctl[f],
+            input = la,
+            sel_pars = sel_pars[f,],
+            n_year = n_year,
+            n_age = n_age)
     }
-  }
+  
 
   # catchability
   log_qt <- matrix(0, nrow = n_year, ncol = n_fleet)
