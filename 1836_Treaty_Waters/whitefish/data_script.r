@@ -14,10 +14,16 @@ data$fleets = dat$aux$fleets # vector of fleets
 data$la = dat$la # length at age
 data$wa = dat$wa # weight at age
 data$mat = dat$mat # maturity at age
-data$obs_eff = dat$obs_eff # observed effort
+obs_eff = matrix(0, nrow = data$n_year, ncol = data$n_fleet)
+obs_eff[,1] = dat$obs_eff
+data$obs_eff = obs_eff # observed effort
 data$obs_ct = dat$obs_ct # observed catch
-data$bio_samp = dat$samp # initial effective sample size
-data$ess = dat$samp # initial effective sample size
+bio_samp = matrix(0, nrow = data$n_year, ncol = data$n_fleet)
+bio_samp[,1] = dat$samp
+data$bio_samp = bio_samp # initial effective sample size
+ess = matrix(0, nrow = data$n_year, ncol = data$n_fleet)
+ess[,1] = dat$samp
+data$ess = ess # initial effective sample size
 data$obs_pa = dat$obs_pa # observed proportions at age (age composition data)
 
 # vectorize all the observed data
@@ -55,7 +61,7 @@ data$rec_ctl = "RW"
 data$sel_ctl = c("logistic") 
 # time-varying catchability
 # 0 - single, 1 - time-varying
-data$qt_ctl = "single"
+data$qt_ctl = "time-varying"
 
 # remove all except data list
 rm(list = setdiff(ls(), c("data")))

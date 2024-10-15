@@ -1,9 +1,10 @@
-format_data = function(d, type_fleet) {
+format_data = function(d, type_fleet) 
+{
   obs = list()
   n_data = length(d)
   # index for data type
   ct_grep = grep("ct|cpe", type_fleet$type)
-  aa_grep = grep("iaa|pa", type_fleet$type)
+  aa_grep = grep("caa|iaa|pa", type_fleet$type)
 
   # loop through datasets
   for (i in 1:n_data)
