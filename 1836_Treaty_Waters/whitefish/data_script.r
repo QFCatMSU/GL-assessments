@@ -46,10 +46,10 @@ type_fleet[2,] = c("pa", 1)
 obs_all = format_data(d = obs_list, type_fleet = type_fleet)
 # incorporate into data list
 data$obs = obs_all$obs
-data$year = obs_all$year
-data$age = obs_all$age
-data$type = obs_all$type
-data$fleet = obs_all$fleet
+data$year_v = obs_all$year
+data$age_v = obs_all$age
+data$type_v = obs_all$type
+data$fleet_v = obs_all$fleet
 
 # controls for alternative functions
 #! define these as characters instead

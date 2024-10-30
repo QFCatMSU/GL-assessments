@@ -9,6 +9,8 @@ source("1836_Treaty_Waters/whitefish/data_script.r")
 source("functions/ddirmultinom.r")
 source("functions/selectivity.r")
 source("functions/recruitment.r")
+source("functions/logcay2comp.r")
+source("functions/log_sum_exp.r")
 
 
 ##################
@@ -119,7 +121,7 @@ f = function(par)
   Z = apply(F, MARGIN = c(1,2), FUN = sum) + M
 
   # recruitment
-  nll[2] <- recruitment(rec_ctl = rec_ctl,
+  nll[2] = recruitment(rec_ctl = rec_ctl,
                         log_r = log_r,
                         r_sd = r_sd,
                         phi = phi)
@@ -143,40 +145,65 @@ f = function(par)
   }
 
   # Baranov's equation to calculate catch and proportions
-  ct = array(0, dim = c(n_year, n_age, n_fleet))
-  ct_total = matrix(0, nrow = n_year, ncol = n_fleet)
-  pa = array(0, dim = c(n_year, n_age, n_fleet))
-  for(f in 1:n_fleet) 
+  log_pred = numeric(length(obs))
+  for(i in 1:length(obs))
   {
-    ct[,,f] = F[,,f] / Z * (1 - exp(-Z)) * exp(log_n)
-    ct_total[,f] = rowSums(ct[,,f])
-    pa[,,f] = ct[,,f] / ct_total[,f]
+    y = year_v[i] - min(year_v) + 1
+    f = fleet_v[i]
+    a = age_v[i] - min(age_v, na.rm = TRUE) + 1
+
+    # first - if the catch data is summarized across ages
+    # second - if there is catch at age data
+    if(is.na(a)) 
+    {
+      log_pred[i] = log_sum_exp(log_n[y, ] - log(Z[y, ]) + log(1 - exp(-Z[y, ])) + log(F[y, , f]))
+    }else 
+    {
+      log_pred[i] = log_n[y, a] - log(Z[y, a]) + log(1 - exp(-Z[y, a])) + log(F[y, a, f])
+    }
   }
 
   # likelihoods
   neff_dm = matrix(0, nrow = n_year, ncol = n_fleet)
-  for (f in unique(fleet)) 
+  for (f in unique(fleet_v)) 
   {
-    for (y in unique(year)) 
+    for (y in unique(year_v)) 
     {
       t = which(years == y)
       # catch likelihood
-      idx = which(fleet == f & year == y & type == "ct")
-      nll[3] = nll[3] - dnorm(obs[idx], log(ct_total[t,f]), ct_sd[f], log = TRUE)
+      idx = which(fleet_v == f & year_v == y & type_v == "ct")
+      nll[3] = nll[3] - dnorm(obs[idx], log_pred[idx], ct_sd[f], log = TRUE)
+      
       # proportions at age likelihood
-      idx = which(fleet == f & year == y & type == "pa")
+      idx = which(fleet_v == f & year_v == y & type_v == "pa")
       if (length(idx) != 0 & sum(obs[idx]) > 0) 
       {
         if (bio_samp[t,f] > 100) 
         {
-          nll[4] = nll[4] - ddirmultinom(obs[idx], pa[t,,f] + 1e-8, bio_samp[t,f], theta[f])
+          nll[4] = nll[4] - ddirmultinom(obs[idx], logcay2comp(log_pred[idx]), bio_samp[t,f], theta[f])
           neff_dm[t,f] = 1 / (1 + theta[f]) + ess[t,f] * (theta[f] / (1 + theta[f]))
         }
       }
     }
   }
 
+  # objective function
   jnll = sum(nll)
+
+  # for reporting and plotting
+  ct_total = matrix(0, nrow = n_year, ncol = n_fleet)
+  pa = array(0, c(n_year, n_age, n_fleet))
+  for(f in 1:n_fleet) 
+  {
+    for (y in unique(year_v)) 
+    {
+      t = which(years == y)
+      idx = which(year_v == y & fleet_v == f & type_v == "ct")
+      ct_total[t, f] = exp(log_pred[idx])
+      idx = which(year_v == y & fleet_v == f & type_v == "pa")
+      pa[t,,f] = exp(log_pred[idx])
+    }
+  }
 
   # reporting
   REPORT(log_n)
@@ -189,6 +216,10 @@ f = function(par)
   return(jnll)
 }
 
+
+#################
+## Run model ####
+#################
 map = list()
 map$log_M = factor(NA)
 map$log_ct_sd = factor(c(NA))
@@ -203,9 +234,3 @@ opt = nlminb(obj$par, obj$fn, obj$gr,
 sdr = sdreport(obj)
 print(opt)
 print(sdr)
-
-pl = obj$report(opt$par)
-matplot(exp(pl$log_n), type = "b")
-
-plot(data$obs_ct[,1], pch = 19)
-lines(pl$ct_total[,1])
