@@ -1,4 +1,4 @@
-log_sum_exp = function(x) 
+log_sum = function(x) 
 {
   sum_exp = sum(exp(x))   
   out = log(sum_exp)      

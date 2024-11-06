@@ -10,7 +10,7 @@ source("functions/ddirmultinom.r")
 source("functions/selectivity.r")
 source("functions/recruitment.r")
 source("functions/logcay2comp.r")
-source("functions/log_sum_exp.r")
+source("functions/log_sum.r")
 
 
 ##################
@@ -156,7 +156,7 @@ f = function(par)
     # second - if there is catch at age data
     if(is.na(a)) 
     {
-      log_pred[i] = log_sum_exp(log_n[y, ] - log(Z[y, ]) + log(1 - exp(-Z[y, ])) + log(F[y, , f]))
+      log_pred[i] = log_sum(log_n[y, ] - log(Z[y, ]) + log(1 - exp(-Z[y, ])) + log(F[y, , f]))
     }else 
     {
       log_pred[i] = log_n[y, a] - log(Z[y, a]) + log(1 - exp(-Z[y, a])) + log(F[y, a, f])
