@@ -9,8 +9,6 @@ source("1836_Treaty_Waters/whitefish/data_script.r")
 source("functions/ddirmultinom.r")
 source("functions/selectivity.r")
 source("functions/recruitment.r")
-source("functions/logcay2comp.r")
-source("functions/log_sum.r")
 
 
 ##################
@@ -156,7 +154,8 @@ f = function(par)
     # second - if there is catch at age data
     if(is.na(a)) 
     {
-      log_pred[i] = log_sum(log_n[y, ] - log(Z[y, ]) + log(1 - exp(-Z[y, ])) + log(F[y, , f]))
+      n_est = exp(log_n[y, ] - log(Z[y, ]) + log(1 - exp(-Z[y, ])) + log(F[y, , f]))
+      log_pred[i] = log(sum(n_est))
     }else 
     {
       log_pred[i] = log_n[y, a] - log(Z[y, a]) + log(1 - exp(-Z[y, a])) + log(F[y, a, f])
@@ -180,7 +179,8 @@ f = function(par)
       {
         if (bio_samp[t,f] > 100) 
         {
-          nll[4] = nll[4] - ddirmultinom(obs[idx], logcay2comp(log_pred[idx]), bio_samp[t,f], theta[f])
+          log_est = exp(log_pred[idx]) / sum(exp(log_pred[idx])) # convert to proportions at age
+          nll[4] = nll[4] - ddirmultinom(obs[idx], log_est, bio_samp[t,f], theta[f])
           neff_dm[t,f] = 1 / (1 + theta[f]) + ess[t,f] * (theta[f] / (1 + theta[f]))
         }
       }
