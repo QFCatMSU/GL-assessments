@@ -9,6 +9,7 @@ source("1836_Treaty_Waters/whitefish/data_script.r")
 source("functions/ddirmultinom.r")
 source("functions/selectivity.r")
 source("functions/recruitment.r")
+source("functions/catchability.r")
 
 
 ##################
@@ -96,17 +97,20 @@ f = function(par)
   {
     if(qt_ctl == "time-varying") # time-varying
     {
-      for(t in 2:n_year)
-      {
-        nll[1] = nll[1] - dnorm(log_qt[t, f], log_qt[t - 1, f], qt_sd[f], log = TRUE)
-      }
+      nll_qt = catchability(qt_ctl = qt_ctl,
+                            log_q = NULL,
+                            log_qt = log_qt[,f],
+                            qt_sd = qt_sd[f],
+                            n_year = n_year)
+      nll[1] = nll[1] + nll_qt
+    
     }else if(qt_ctl == "single")
     {
-      log_qt = matrix(0, nrow = n_year, ncol = n_fleet)
-      for(t in 1:n_year)
-      {
-        log_qt[t,f] = log_q
-      }
+      log_qt = catchability(qt_ctl = qt_ctl,
+                            log_q = log_q[f],
+                            log_qt = NULL,
+                            qt_sd = NULL,
+                            n_year = n_year)
     }
   }
 
@@ -234,3 +238,4 @@ opt = nlminb(obj$par, obj$fn, obj$gr,
 sdr = sdreport(obj)
 print(opt)
 print(sdr)
+
