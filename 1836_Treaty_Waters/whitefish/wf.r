@@ -184,7 +184,7 @@ f = function(par)
         if (bio_samp[t,f] > 100) 
         {
           log_est = exp(log_pred[idx]) / sum(exp(log_pred[idx])) # convert to proportions at age
-          nll[4] = nll[4] - ddirmultinom(obs[idx], log_est, bio_samp[t,f], theta[f])
+          nll[4] = nll[4] - ddirmultinom(obs[idx], log_est, ess[t,f], theta[f])
           neff_dm[t,f] = 1 / (1 + theta[f]) + ess[t,f] * (theta[f] / (1 + theta[f]))
         }
       }

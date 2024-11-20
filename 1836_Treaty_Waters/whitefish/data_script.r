@@ -2,8 +2,16 @@
 ## Data ####
 ############
 #! - before comments, use space not tab
-load("1836_Treaty_Waters/whitefish/sim_data.Rdata")
+source("functions/dat_to_list.r")
 source("functions/format_data.r")
+
+# extract data from .dat files
+dat = dat_to_Rdata(path = "1836_Treaty_Waters/dat_files",
+                  model_years = 1986:2021,
+                  model_ages = 4:20,
+                  model_fleets = "trap")
+
+# data list for model
 data = list()
 data$n_age = dat$aux$n_age        # number of ages
 data$n_year = dat$aux$n_year      # number of years
