@@ -6,22 +6,22 @@ catchability = function(qt_ctl,
 {
   if(qt_ctl == "time-varying")
   {
-    nll = 0
+    nll = 0;
     for(t in 2:n_year)
     {
-      nll = nll - dnorm(log_qt[t], log_qt[t - 1], qt_sd, log = TRUE)
+      nll = nll - dnorm(log_qt[t], log_qt[t - 1], qt_sd, log = TRUE);
     }
-    out = nll
+    out = nll;
     
   }else if(qt_ctl == "single")
   {
-    log_qt = rep(0, n_year)
+    log_qt = rep(0, n_year);
     for(t in 1:n_year)
     {
-      log_qt[t] = log_q
+      log_qt[t] = log_q;
     }
-    out = log_qt 
+    out = log_qt;
   }
     
-  return(out)
+  return(out);
 }
