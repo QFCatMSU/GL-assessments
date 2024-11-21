@@ -11,9 +11,8 @@ catchability = function(qt_ctl,
     {
       nll = nll - dnorm(log_qt[t], log_qt[t - 1], qt_sd, log = TRUE)
     }
+    out = nll
     
-    return(nll)
-
   }else if(qt_ctl == "single")
   {
     log_qt = rep(0, n_year)
@@ -21,8 +20,8 @@ catchability = function(qt_ctl,
     {
       log_qt[t] = log_q
     }
-
-    return(log_qt)
-    
+    out = log_qt 
   }
+    
+  return(out)
 }
